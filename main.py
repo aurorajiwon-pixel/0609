@@ -10,7 +10,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-COUNTRIES  = ["중국", "인도", "투발루", "미국"]
+CLASS_COUNTRIES = {
+    "1반": ["미국", "투발루", "인도"],
+    "2반": ["미국", "투발루", "중국", "인도"],
+}
+CLASSES    = ["1반", "2반"]
+COUNTRIES  = ["중국", "인도", "투발루", "미국"]  # 전체 (교사 뷰용)
 ISSUES     = ["기후 기금의 규모", "기금의 지원 방식", "기금 부담 국가"]
 Q4_CHOICES = ["충분한 재정 지원", "공정한 규칙과 기준",
                "선진국의 역사적 책임 인정", "기술 공유",
@@ -34,13 +39,13 @@ def save_record(key, record):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-def get_group(g):
-    return {k: v for k, v in load_all().items() if v.get("group") == g}
+def get_group(cls):
+    return {k: v for k, v in load_all().items() if v.get("class") == cls}
 
-def ukey(g, n): return f"{g}|{n}"
+def ukey(cls, g, n): return f"{cls}|{g}|{n}"
 
 # ── 세션 초기화 ─────────────────────────────────────────────
-for k, d in [("in", False), ("group", None), ("name", None),
+for k, d in [("in", False), ("class", None), ("group", None), ("name", None),
              ("teacher", False), ("rec", {})]:
     if k not in st.session_state:
         st.session_state[k] = d
@@ -113,14 +118,16 @@ with st.sidebar:
     st.markdown("---")
 
     if not st.session_state["in"]:
-        grp  = st.selectbox("📍 내 배정 국가", COUNTRIES)
+        cls  = st.selectbox("🏫 분반", CLASSES)
+        grp  = st.selectbox("📍 내 배정 국가", CLASS_COUNTRIES[cls])
         name = st.text_input("✏️ 이름", placeholder="이름을 입력하세요")
 
         if st.button("시작 / 이전 기록 불러오기", type="primary", use_container_width=True):
             if name.strip():
-                key      = ukey(grp, name.strip())
+                key      = ukey(cls, grp, name.strip())
                 existing = load_all().get(key, {})
                 st.session_state["in"]    = True
+                st.session_state["class"] = cls
                 st.session_state["group"] = grp
                 st.session_state["name"]  = name.strip()
                 st.session_state["rec"]   = existing.get("rec", {})
@@ -136,7 +143,7 @@ with st.sidebar:
             else: st.rerun()
 
     else:
-        st.markdown(f"### {st.session_state['group']} 대표단")
+        st.markdown(f"### {st.session_state['class']} · {st.session_state['group']} 대표단")
         st.markdown(f"**{st.session_state['name']}** 님")
         st.markdown("---")
         st.caption("각 섹션을 작성하고\n**저장** 버튼을 눌러주세요.")
@@ -159,11 +166,15 @@ if st.session_state.get("teacher"):
     if not data:
         st.info("아직 제출된 기록이 없습니다.")
     else:
-        for ctry in COUNTRIES:
-            grp_data = {k: v for k, v in data.items() if v.get("group") == ctry}
-            if not grp_data: continue
-            with st.expander(f"🏴 {ctry} 모둠 ({len(grp_data)}명)", expanded=False):
-                for key, entry in grp_data.items():
+        for cls_name in CLASSES:
+            cls_data = {k: v for k, v in data.items() if v.get("class") == cls_name}
+            if not cls_data: continue
+            st.markdown(f"### 🏫 {cls_name}")
+            for ctry in CLASS_COUNTRIES[cls_name]:
+                grp_data = {k: v for k, v in cls_data.items() if v.get("group") == ctry}
+                if not grp_data: continue
+                with st.expander(f"🏴 {ctry} 모둠 ({len(grp_data)}명)", expanded=False):
+                 for key, entry in grp_data.items():
                     r = entry.get("rec", {})
                     st.markdown(f"<div class='peer-name'>👤 {entry.get('name','')} "
                                 f"<small style='color:#aaa'>{entry.get('saved_at','')}</small></div>",
@@ -206,12 +217,13 @@ if not st.session_state["in"]:
 # ════════════════════════════════════════════════════════
 # MAIN
 # ════════════════════════════════════════════════════════
+cls = st.session_state["class"]
 grp = st.session_state["group"]
 nm  = st.session_state["name"]
 rec = st.session_state["rec"]
 
 st.title(f"🌍 기후변화 모의총회 포트폴리오")
-st.caption(f"배정 국가: **{grp}** 　 이름: **{nm}** 　 {datetime.now().strftime('%Y년 %m월 %d일')}")
+st.caption(f"분반: **{cls}** 　 배정 국가: **{grp}** 　 이름: **{nm}** 　 {datetime.now().strftime('%Y년 %m월 %d일')}")
 
 st.markdown("""<div class='issue-banner'>
 🔥 <strong>오늘 총회의 쟁점</strong> — 
@@ -233,7 +245,7 @@ with tab1:
     with st.form("form_records"):
 
         nation_data = {}
-        other_countries = [c for c in COUNTRIES if c != grp]
+        other_countries = [c for c in CLASS_COUNTRIES.get(cls, COUNTRIES) if c != grp]
 
         for i in range(3):
             nr = rec.get(f"nation{i+1}", {})
@@ -301,8 +313,8 @@ with tab1:
     if saved1:
         rec.update({**nation_data, "compare": cmp_vals})
         st.session_state["rec"] = rec
-        save_record(ukey(grp, nm), {
-            "group": grp, "name": nm, "rec": rec,
+        save_record(ukey(cls, grp, nm), {
+            "class": st.session_state["class"], "group": grp, "name": nm, "rec": rec,
             "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
         st.success("저장되었습니다! ✅")
@@ -398,8 +410,8 @@ with tab2:
             "closing": closing
         }
         st.session_state["rec"] = rec
-        save_record(ukey(grp, nm), {
-            "group": grp, "name": nm, "rec": rec,
+        save_record(ukey(cls, grp, nm), {
+            "class": st.session_state["class"], "group": grp, "name": nm, "rec": rec,
             "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
         st.success("저장되었습니다! ✅")
@@ -409,10 +421,10 @@ with tab2:
 # TAB 3 : 모둠 기록 보기
 # ────────────────────────────────────────────────────────
 with tab3:
-    st.markdown(f'<div class="section-title">👥 {grp} 모둠 기록</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-desc">같은 모둠 친구들의 성찰을 함께 읽어봐요.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-title">👥 {cls} 전체 기록</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-desc">같은 반 모든 모둠의 성찰을 함께 읽어봐요.</div>', unsafe_allow_html=True)
 
-    grp_data = get_group(grp)
+    grp_data = get_group(cls)
 
     if not grp_data:
         st.info("아직 제출된 기록이 없습니다. 첫 번째로 작성해보세요!")
@@ -422,10 +434,11 @@ with tab3:
             enm = entry.get("name", "")
             ref = r.get("reflection", {})
 
+            country_badge = entry.get("group","")
             with st.expander(
-                f"👤 {enm}　　"
+                f"🏴 {country_badge}　👤 {enm}　　"
                 f"{'✅ 기록 완료' if ref.get('closing') else '⏳ 작성 중'}",
-                expanded=(enm == nm)
+                expanded=(enm == nm and entry.get("group") == grp)
             ):
                 col1, col2 = st.columns([1.1, 1])
                 with col1:
@@ -459,4 +472,4 @@ with tab3:
                                     f'"{ref["closing"]}"</div>',
                                     unsafe_allow_html=True)
 
-        st.caption(f"총 {len(grp_data)}명 기록")
+        st.caption(f"{cls} 총 {len(grp_data)}명 기록")
